@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NBA Card Collection</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <style>
+    :root {
+      --bg-base:        #0A0904;
+      --bg-surface:     #111008;
+      --bg-card:        #17140A;
+      --bg-card-hover:  #1E1A0E;
+      --gold-bright:    #F2C455;
+      --gold-main:      #C9A84C;
+      --gold-dim:       #8B7030;
+      --gold-subtle:    #2E2412;
+      --text-primary:   #EDE0C4;
+      --text-secondary: #9A8B6A;
+      --text-muted:     #4A4030;
+      --border:         #201C10;
+      --border-gold:    #3A3018;
+      --shadow-gold:    rgba(201, 168, 76, 0.18);
+      --radius-sm:      6px;
+      --radius-md:      10px;
+      --radius-lg:      14px;
+      --ease:           cubic-bezier(0.22, 0.61, 0.36, 1);
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: 'Georgia', 'Times New Roman', serif;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Header ─────────────────────────────────── */
+    .header {
+      position: sticky;
+      top: 0;
+      z-index: 200;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-gold);
+      padding: 20px 40px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      box-shadow: 0 4px 40px rgba(0,0,0,0.6);
+    }
+
+    .header-brand { display: flex; flex-direction: column; gap: 3px; }
+
+    .header-brand h1 {
+      font-size: 20px;
+      font-weight: normal;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--gold-bright);
+      line-height: 1;
+    }
+
+    .header-brand span {
+      font-family: sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    .header-actions { display: flex; align-items: center; gap: 10px; }
+
+    /* ── Sync indicator ──────────────────────────── */
+    .sync-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--gold-dim);
+      transition: background 300ms;
+      flex-shrink: 0;
+    }
+    .sync-dot.syncing { background: var(--gold-bright); animation: pulse 800ms infinite; }
+    .sync-dot.ok      { background: #5A9E6F; }
+    .sync-dot.error   { background: #9E5A5A; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ── Buttons ─────────────────────────────────── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 9px 18px;
+      border-radius: var(--radius-sm);
+      font-size: 12px;
+      letter-spacing: 0.07em;
+      font-family: sans-serif;
+      font-weight: 500;
+      cursor: pointer;
+      border: none;
+      transition: all 200ms var(--ease);
+      white-space: nowrap;
+    }
+
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .btn-gold { background: var(--gold-main); color: #0A0904; }
+    .btn-gold:hover:not(:disabled) {
+      background: var(--gold-bright);
+      box-shadow: 0 0 24px var(--shadow-gold);
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-gold);
+    }
+    .btn-ghost:hover:not(:disabled) {
+      color: var(--gold-main);
+      border-color: var(--gold-dim);
+      background: rgba(201,168,76,0.05);
+    }
+
+    /* ── Main ────────────────────────────────────── */
+    .main {
+      max-width: 1440px;
+      margin: 0 auto;
+      padding: 36px 40px 80px;
+    }
+
+    /* ── Stats ───────────────────────────────────── */
+    .stats {
+      display: flex;
+      align-items: flex-end;
+      gap: 40px;
+      margin-bottom: 36px;
+      padding-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stat-value {
+      font-size: 36px;
+      color: var(--gold-bright);
+      letter-spacing: -0.03em;
+      line-height: 1;
+      font-weight: normal;
+    }
+
+    .stat-label {
+      font-family: sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-top: 5px;
+    }
+
+    .stats-divider { width: 1px; height: 36px; background: var(--border-gold); }
+
+    /* ── Grid ────────────────────────────────────── */
+    .card-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 28px 24px;
+    }
+
+    /* ── Card item ───────────────────────────────── */
+    .card-item {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      animation: rise 280ms var(--ease) both;
+    }
+
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ── Card slot ───────────────────────────────── */
+    .card-slot {
+      width: 100%;
+      aspect-ratio: 380 / 639;
+      position: relative;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      cursor: pointer;
+      background: var(--bg-card);
+      border: 1px solid var(--border-gold);
+      transition: transform 220ms var(--ease), box-shadow 220ms var(--ease), border-color 220ms var(--ease);
+      box-shadow: 0 2px 12px rgba(0,0,0,0.5), inset 0 1px 0 rgba(201,168,76,0.08);
+    }
+
+    .card-slot:hover {
+      transform: translateY(-3px);
+      border-color: var(--gold-dim);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 0 1px var(--gold-subtle), inset 0 1px 0 rgba(201,168,76,0.15);
+    }
+
+    .card-slot img {
+      width: 100%; height: 100%;
+      object-fit: cover; display: block;
+      pointer-events: none; user-select: none;
+    }
+
+    /* Upload progress overlay */
+    .card-slot.uploading::after {
+      content: '上傳中...';
+      position: absolute;
+      inset: 0;
+      background: rgba(10,9,4,0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: sans-serif;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+      color: var(--gold-main);
+    }
+
+    /* Empty slot */
+    .slot-empty {
+      position: absolute; inset: 0;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; pointer-events: none;
+    }
+
+    .slot-empty-icon {
+      width: 48px; height: 48px;
+      border-radius: 50%;
+      background: var(--gold-subtle);
+      border: 1px solid var(--border-gold);
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    .slot-empty p {
+      font-family: sans-serif;
+      font-size: 10px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* PSA badge */
+    .psa-badge {
+      position: absolute; top: 8px; right: 8px;
+      background: rgba(10,9,4,0.85);
+      border: 1px solid var(--border-gold);
+      border-radius: 4px; padding: 3px 7px;
+      font-family: sans-serif; font-size: 9px;
+      letter-spacing: 0.1em; color: var(--gold-dim);
+      text-transform: uppercase; pointer-events: none;
+    }
+
+    /* Hover overlay */
+    .card-overlay {
+      position: absolute; inset: 0;
+      background: linear-gradient(to top, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.4) 50%, rgba(0,0,0,0.1) 100%);
+      display: flex; align-items: flex-end; justify-content: center;
+      gap: 10px; padding-bottom: 16px;
+      opacity: 0; transition: opacity 200ms var(--ease);
+    }
+
+    .card-slot:hover .card-overlay { opacity: 1; }
+
+    .ov-btn {
+      width: 36px; height: 36px; border-radius: 50%;
+      border: 1px solid rgba(201,168,76,0.4);
+      background: rgba(10,9,4,0.7);
+      color: var(--gold-main); font-size: 14px;
+      cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      transition: all 180ms var(--ease);
+      backdrop-filter: blur(4px);
+    }
+
+    .ov-btn:hover { background: var(--gold-main); color: #0A0904; border-color: var(--gold-main); transform: scale(1.1); }
+    .ov-btn.danger:hover { background: #B03030; border-color: #B03030; color: #fff; }
+
+    input[type="file"] { display: none; }
+
+    /* ── Player name ──────────────────────────────── */
+    .card-name { padding: 0 2px; }
+
+    .card-name input {
+      width: 100%; background: transparent;
+      border: none; border-bottom: 1px solid transparent;
+      color: var(--text-primary); font-family: sans-serif;
+      font-size: 12px; letter-spacing: 0.08em;
+      text-align: center; padding: 4px 0; outline: none;
+      transition: border-color 180ms var(--ease), color 180ms var(--ease);
+      caret-color: var(--gold-main);
+    }
+
+    .card-name input::placeholder { color: var(--text-muted); font-size: 11px; letter-spacing: 0.1em; }
+    .card-name input:focus { border-bottom-color: var(--gold-main); color: var(--gold-bright); }
+
+    /* ── Add card slot ────────────────────────────── */
+    .add-card-slot { display: flex; flex-direction: column; gap: 10px; }
+
+    .add-btn-area {
+      width: 100%; aspect-ratio: 380 / 639;
+      background: transparent;
+      border: 2px dashed var(--border-gold);
+      border-radius: var(--radius-lg);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 10px; cursor: pointer;
+      transition: all 200ms var(--ease);
+      color: var(--text-muted);
+    }
+
+    .add-btn-area:hover { border-color: var(--gold-dim); color: var(--gold-main); background: rgba(201,168,76,0.03); }
+
+    .add-btn-area .add-icon {
+      width: 44px; height: 44px; border-radius: 50%;
+      border: 1px dashed currentColor;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px; font-weight: 300; line-height: 1;
+      transition: transform 200ms var(--ease);
+    }
+
+    .add-btn-area:hover .add-icon { transform: scale(1.1) rotate(90deg); }
+
+    .add-btn-area p {
+      font-family: sans-serif; font-size: 10px;
+      letter-spacing: 0.14em; text-transform: uppercase;
+    }
+
+    .add-name-spacer { height: 27px; }
+
+    /* ── Loading screen ───────────────────────────── */
+    .loading-screen {
+      position: fixed; inset: 0; z-index: 999;
+      background: var(--bg-base);
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 16px;
+      transition: opacity 400ms var(--ease);
+    }
+
+    .loading-screen.hidden { opacity: 0; pointer-events: none; }
+
+    .loading-ring {
+      width: 40px; height: 40px;
+      border: 2px solid var(--border-gold);
+      border-top-color: var(--gold-main);
+      border-radius: 50%;
+      animation: spin 800ms linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-screen p {
+      font-family: sans-serif; font-size: 11px;
+      letter-spacing: 0.14em; text-transform: uppercase;
+      color: var(--text-muted);
+    }
+
+    /* ── Empty state ─────────────────────────────── */
+    .empty-state {
+      grid-column: 1 / -1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 100px 0; gap: 16px; text-align: center;
+    }
+
+    .empty-state-icon { font-size: 48px; opacity: 0.2; margin-bottom: 8px; }
+
+    .empty-state h2 {
+      font-size: 18px; color: var(--text-secondary);
+      font-weight: normal; letter-spacing: 0.06em;
+    }
+
+    .empty-state p {
+      font-family: sans-serif; font-size: 12px;
+      color: var(--text-muted); letter-spacing: 0.08em;
+    }
+
+    .empty-gold-line {
+      width: 120px; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
+    }
+
+    /* ── Toast ────────────────────────────────────── */
+    .toast {
+      position: fixed; bottom: 32px; right: 32px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-gold);
+      color: var(--text-primary);
+      padding: 11px 20px; border-radius: var(--radius-sm);
+      font-family: sans-serif; font-size: 12px; letter-spacing: 0.05em;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.6);
+      pointer-events: none; z-index: 998;
+      opacity: 0; transform: translateY(12px);
+      transition: opacity 220ms var(--ease), transform 220ms var(--ease);
+    }
+
+    .toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Scrollbar ────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg-base); }
+    ::-webkit-scrollbar-thumb { background: var(--border-gold); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--gold-dim); }
+  </style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div class="loading-screen" id="loadingScreen">
+  <div class="loading-ring"></div>
+  <p>連線中</p>
+</div>
+
+<!-- Header -->
+<header class="header">
+  <div class="header-brand">
+    <h1>Card Collection</h1>
+    <span>NBA · PSA Graded</span>
+  </div>
+  <div class="header-actions">
+    <div class="sync-dot" id="syncDot" title="雲端同步狀態"></div>
+    <button class="btn btn-gold" id="addBtn" onclick="addCard()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+      </svg>
+      新增卡片
+    </button>
+  </div>
+</header>
+
+<!-- Main -->
+<main class="main">
+  <div class="stats">
+    <div>
+      <div class="stat-value" id="totalCount">—</div>
+      <div class="stat-label">張卡片</div>
+    </div>
+    <div class="stats-divider"></div>
+    <div>
+      <div class="stat-value" id="photoCount">—</div>
+      <div class="stat-label">已上傳圖片</div>
+    </div>
+  </div>
+  <div class="card-grid" id="cardGrid"></div>
+</main>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  /* ── Supabase 初始化 ─────────────────────────── */
+  const { createClient } = supabase;
+  const db = createClient(
+    'https://uguxzseangntmddvgzpl.supabase.co',
+    'sb_publishable_JyqJ4lUj-vnh3USGWiciYw_G07vLNcP'
+  );
+
+  let cards = [];
+
+  /* ── 同步狀態指示燈 ──────────────────────────── */
+  function setSyncStatus(state) {
+    const dot = document.getElementById('syncDot');
+    dot.className = 'sync-dot ' + state;
+  }
+
+  /* ── 載入畫面 ────────────────────────────────── */
+  function hideLoading() {
+    const el = document.getElementById('loadingScreen');
+    el.classList.add('hidden');
+    setTimeout(() => el.remove(), 500);
+  }
+
+  /* ── 初始化：從 Supabase 載入所有卡片 ────────── */
+  async function init() {
+    setSyncStatus('syncing');
+    const { data, error } = await db
+      .from('cards')
+      .select('*')
+      .order('created_at');
+
+    if (error) {
+      setSyncStatus('error');
+      toast('無法連線到雲端，請重新整理頁面');
+      hideLoading();
+      return;
+    }
+
+    cards = data || [];
+    setSyncStatus('ok');
+    hideLoading();
+    render();
+  }
+
+  /* ── 新增卡片 ────────────────────────────────── */
+  async function addCard() {
+    document.getElementById('addBtn').disabled = true;
+    setSyncStatus('syncing');
+
+    const { data, error } = await db
+      .from('cards')
+      .insert({ player_name: '', image_url: null })
+      .select()
+      .single();
+
+    document.getElementById('addBtn').disabled = false;
+
+    if (error) { setSyncStatus('error'); toast('新增失敗，請再試一次'); return; }
+
+    cards.push(data);
+    setSyncStatus('ok');
+    render();
+
+    setTimeout(() => {
+      const el = document.getElementById(`n-${data.id}`);
+      if (el) el.focus();
+    }, 40);
+  }
+
+  /* ── 刪除卡片 ────────────────────────────────── */
+  async function deleteCard(id) {
+    setSyncStatus('syncing');
+    const card = cards.find(c => c.id === id);
+
+    // 先刪除 Storage 裡的圖片
+    if (card?.image_url) {
+      const path = extractPath(card.image_url);
+      if (path) await db.storage.from('card-images').remove([path]);
+    }
+
+    const { error } = await db.from('cards').delete().eq('id', id);
+    if (error) { setSyncStatus('error'); toast('刪除失敗，請再試一次'); return; }
+
+    cards = cards.filter(c => c.id !== id);
+    setSyncStatus('ok');
+    render();
+    toast('卡片已移除');
+  }
+
+  /* ── 更新球員名稱 ─────────────────────────────── */
+  async function setName(id, val) {
+    setSyncStatus('syncing');
+    const { error } = await db
+      .from('cards')
+      .update({ player_name: val })
+      .eq('id', id);
+
+    if (error) { setSyncStatus('error'); toast('儲存失敗'); return; }
+
+    const c = cards.find(c => c.id === id);
+    if (c) c.player_name = val;
+    setSyncStatus('ok');
+  }
+
+  /* ── 觸發圖片選取 ─────────────────────────────── */
+  function pickImage(id) {
+    document.getElementById(`f-${id}`).click();
+  }
+
+  /* ── 上傳圖片到 Supabase Storage ─────────────── */
+  async function onImagePick(id, e) {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const slot = document.querySelector(`#card-${id} .card-slot`);
+    if (slot) slot.classList.add('uploading');
+    setSyncStatus('syncing');
+
+    // 若已有舊圖片，先刪除
+    const card = cards.find(c => c.id === id);
+    if (card?.image_url) {
+      const oldPath = extractPath(card.image_url);
+      if (oldPath) await db.storage.from('card-images').remove([oldPath]);
+    }
+
+    // 上傳新圖片
+    const ext  = file.name.split('.').pop();
+    const path = `${id}/${Date.now()}.${ext}`;
+
+    const { error: uploadErr } = await db.storage
+      .from('card-images')
+      .upload(path, file);
+
+    if (uploadErr) {
+      if (slot) slot.classList.remove('uploading');
+      setSyncStatus('error');
+      toast('圖片上傳失敗，請再試一次');
+      return;
+    }
+
+    // 取得公開 URL
+    const { data: { publicUrl } } = db.storage
+      .from('card-images')
+      .getPublicUrl(path);
+
+    // 更新資料庫
+    const { error: updateErr } = await db
+      .from('cards')
+      .update({ image_url: publicUrl })
+      .eq('id', id);
+
+    if (updateErr) { setSyncStatus('error'); toast('更新失敗'); return; }
+
+    if (card) card.image_url = publicUrl;
+    if (slot) slot.classList.remove('uploading');
+    setSyncStatus('ok');
+    render();
+    toast('圖片已上傳並同步至雲端');
+
+    e.target.value = '';
+  }
+
+  /* ── 移除圖片 ────────────────────────────────── */
+  async function removeImg(id) {
+    const card = cards.find(c => c.id === id);
+    if (!card?.image_url) return;
+
+    setSyncStatus('syncing');
+    const path = extractPath(card.image_url);
+    if (path) await db.storage.from('card-images').remove([path]);
+
+    const { error } = await db.from('cards').update({ image_url: null }).eq('id', id);
+    if (error) { setSyncStatus('error'); toast('移除失敗'); return; }
+
+    card.image_url = null;
+    setSyncStatus('ok');
+    render();
+  }
+
+  /* ── 從 URL 解析 Storage 路徑 ─────────────────── */
+  function extractPath(url) {
+    const match = url.match(/\/object\/public\/card-images\/(.+)/);
+    return match ? match[1] : null;
+  }
+
+  /* ── 更新統計數字 ─────────────────────────────── */
+  function updateStats() {
+    document.getElementById('totalCount').textContent = cards.length;
+    document.getElementById('photoCount').textContent = cards.filter(c => c.image_url).length;
+  }
+
+  /* ── Toast ───────────────────────────────────── */
+  let toastTimer;
+  function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2800);
+  }
+
+  /* ── 渲染畫面 ────────────────────────────────── */
+  function render() {
+    const grid = document.getElementById('cardGrid');
+    grid.innerHTML = '';
+
+    if (!cards.length) {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🏀</div>
+          <div class="empty-gold-line"></div>
+          <h2>收藏冊是空的</h2>
+          <p>按下「新增卡片」開始建立你的 NBA PSA 收藏</p>
+        </div>`;
+      updateStats();
+      return;
+    }
+
+    cards.forEach(c => {
+      const el = document.createElement('div');
+      el.className = 'card-item';
+      el.id = `card-${c.id}`;
+
+      el.innerHTML = `
+        <div class="card-slot" onclick="pickImage('${c.id}')">
+
+          ${c.image_url
+            ? `<img src="${c.image_url}" alt="${c.player_name || 'PSA Card'}" draggable="false">`
+            : `<div class="slot-empty">
+                <div class="slot-empty-icon">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="1.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                </div>
+                <p>點擊上傳圖片</p>
+              </div>`
+          }
+
+          <div class="psa-badge">PSA</div>
+
+          <div class="card-overlay">
+            <button class="ov-btn" title="更換圖片"
+              onclick="event.stopPropagation(); pickImage('${c.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+            ${c.image_url ? `
+            <button class="ov-btn" title="移除圖片"
+              onclick="event.stopPropagation(); removeImg('${c.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+              </svg>
+            </button>` : ''}
+            <button class="ov-btn danger" title="刪除卡片"
+              onclick="event.stopPropagation(); deleteCard('${c.id}')">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                <path d="M10 11v6"/><path d="M14 11v6"/>
+                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/>
+              </svg>
+            </button>
+          </div>
+
+          <input type="file" id="f-${c.id}" accept="image/*"
+            onchange="onImagePick('${c.id}', event)">
+        </div>
+
+        <div class="card-name">
+          <input
+            type="text"
+            id="n-${c.id}"
+            placeholder="球員姓名"
+            value="${(c.player_name || '').replace(/"/g, '&quot;')}"
+            onchange="setName('${c.id}', this.value)"
+            onclick="event.stopPropagation()"
+          >
+        </div>
+      `;
+
+      grid.appendChild(el);
+    });
+
+    // 新增按鈕格子
+    const addEl = document.createElement('div');
+    addEl.className = 'add-card-slot';
+    addEl.innerHTML = `
+      <div class="add-btn-area" onclick="addCard()">
+        <div class="add-icon">+</div>
+        <p>新增卡片</p>
+      </div>
+      <div class="add-name-spacer"></div>
+    `;
+    grid.appendChild(addEl);
+
+    updateStats();
+  }
+
+  /* ── 啟動 ────────────────────────────────────── */
+  init();
+</script>
+</body>
+</html>
