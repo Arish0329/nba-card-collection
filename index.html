@@ -421,6 +421,53 @@
     .empty-state p { font-family: sans-serif; font-size: 12px; color: var(--text-muted); letter-spacing: 0.08em; }
     .empty-gold-line { width: 120px; height: 1px; background: linear-gradient(90deg, transparent, var(--gold-dim), transparent); }
 
+    /* ── Lightbox ────────────────────────────────── */
+    .lightbox {
+      position: fixed; inset: 0; z-index: 900;
+      background: rgba(0,0,0,0.92);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 260ms var(--ease);
+      cursor: zoom-out;
+    }
+
+    .lightbox.show { opacity: 1; pointer-events: all; }
+
+    .lightbox-img {
+      max-width: min(500px, 90vw);
+      max-height: 90vh;
+      object-fit: contain;
+      border-radius: var(--radius-md);
+      box-shadow: 0 32px 100px rgba(0,0,0,0.8), 0 0 0 1px rgba(201,168,76,0.15);
+      transform: scale(0.94);
+      transition: transform 260ms var(--ease);
+      cursor: default;
+    }
+
+    .lightbox.show .lightbox-img { transform: scale(1); }
+
+    .lightbox-close {
+      position: absolute; top: 24px; right: 28px;
+      width: 40px; height: 40px; border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.18);
+      color: rgba(255,255,255,0.7); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 180ms var(--ease);
+    }
+
+    .lightbox-close:hover { background: rgba(255,255,255,0.18); color: #fff; }
+
+    .lightbox-caption {
+      position: absolute; bottom: 28px; left: 50%; transform: translateX(-50%);
+      font-family: sans-serif; font-size: 11px; letter-spacing: 0.18em;
+      text-transform: uppercase; color: rgba(201,168,76,0.5);
+      white-space: nowrap;
+    }
+
+    /* 公開模式：有圖片的卡片 zoom-in cursor */
+    body:not(.admin-mode) .card-slot.has-image { cursor: zoom-in; }
+
     /* ── Toast ────────────────────────────────────── */
     .toast {
       position: fixed; bottom: 32px; right: 32px;
@@ -538,6 +585,17 @@
       <button class="btn btn-gold" id="modalSaveBtn" onclick="submitAddPlayer()">新增</button>
     </div>
   </div>
+</div>
+
+<!-- Lightbox -->
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <button class="lightbox-close" onclick="event.stopPropagation(); closeLightbox()">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+    </svg>
+  </button>
+  <img class="lightbox-img" id="lightboxImg" src="" alt="" onclick="event.stopPropagation()">
+  <div class="lightbox-caption" id="lightboxCaption"></div>
 </div>
 
 <!-- Toast -->
@@ -808,6 +866,31 @@
     render();
   }
 
+  /* ── Lightbox ────────────────────────────────── */
+  function onCardClick(cardId, playerId) {
+    if (document.body.classList.contains('admin-mode')) {
+      pickCardImage(cardId);
+    } else {
+      const p = players.find(p => p.id === playerId);
+      const c = p?.cards.find(c => c.id === cardId);
+      if (c?.image_url) openLightbox(c.image_url, p?.name || '');
+    }
+  }
+
+  function openLightbox(url, playerName) {
+    document.getElementById('lightboxImg').src = url;
+    document.getElementById('lightboxCaption').textContent = playerName;
+    document.getElementById('lightbox').classList.add('show');
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    document.getElementById('lightbox').classList.remove('show');
+    document.body.style.overflow = '';
+  }
+
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLightbox(); });
+
   /* ── Helpers ─────────────────────────────────── */
   function extractPath(url) { const m = url.match(/\/object\/public\/card-images\/(.+)/); return m ? m[1] : null; }
   function getInitials(name) { return (name||'').split(' ').filter(Boolean).map(w=>w[0]).slice(0,2).join(''); }
@@ -855,7 +938,7 @@
 
       const cardsHtml = p.cards.map(c => `
         <div class="card-item">
-          <div class="card-slot" id="cs-${c.id}" onclick="if(document.body.classList.contains('admin-mode')) pickCardImage('${c.id}')">
+          <div class="card-slot ${c.image_url ? 'has-image' : ''}" id="cs-${c.id}" onclick="onCardClick('${c.id}','${p.id}')">
             ${c.image_url
               ? `<img src="${c.image_url}" alt="PSA Card" draggable="false">`
               : `<div class="slot-empty">
