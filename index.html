@@ -210,6 +210,31 @@
       margin-bottom: 24px;
     }
 
+    /* ── Drag & Drop ─────────────────────────────── */
+    .drag-handle {
+      display: none;
+      width: 28px; height: 28px;
+      align-items: center; justify-content: center;
+      color: var(--text-muted); cursor: grab;
+      border-radius: var(--radius-sm);
+      transition: color 180ms var(--ease), background 180ms var(--ease);
+      flex-shrink: 0; margin-right: 4px;
+    }
+    body.admin-mode .drag-handle { display: flex; }
+    .drag-handle:hover { color: var(--gold-dim); background: rgba(201,168,76,0.06); }
+    .drag-handle:active { cursor: grabbing; }
+
+    .player-section.is-dragging {
+      opacity: 0.3;
+      transform: scale(0.985);
+      transition: opacity 150ms, transform 150ms;
+    }
+    .player-section.drag-over {
+      outline: 2px dashed var(--gold-dim);
+      outline-offset: 10px;
+      border-radius: var(--radius-md);
+    }
+
     /* ── Card Grid ───────────────────────────────── */
     .card-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 28px 24px; }
 
@@ -636,6 +661,7 @@
 
     const cards = cs || [];
     players = (ps || []).map(p => ({ ...p, cards: cards.filter(c => c.player_id === p.id) }));
+    applyPlayerOrder();
 
     setSyncStatus('ok');
     hideLoading();
@@ -932,6 +958,7 @@
     players.forEach(p => {
       const section = document.createElement('div');
       section.className = 'player-section';
+      section.dataset.playerId = p.id;
 
       const avatarInner = p.profile_image_url
         ? `<img src="${p.profile_image_url}" alt="${p.name}">`
@@ -983,7 +1010,13 @@
 
       section.innerHTML = `
         <div class="player-header">
-          <div class="player-avatar" onclick="pickPlayerPhoto('${p.id}')">
+          <div class="drag-handle" title="拖曳排序">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="currentColor">
+              <circle cx="4" cy="2" r="1.2"/><circle cx="4" cy="7" r="1.2"/><circle cx="4" cy="12" r="1.2"/>
+              <circle cx="10" cy="2" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="10" cy="12" r="1.2"/>
+            </svg>
+          </div>
+          <div class="player-avatar" onclick="pickPlayerPhoto('${p.id}')"
             ${avatarInner}
             <div class="avatar-overlay">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#C9A84C" stroke-width="2">
@@ -1030,6 +1063,91 @@
     });
 
     updateStats();
+    initDragDrop();
+  }
+
+  /* ── Drag & Drop ─────────────────────────────── */
+  function savePlayerOrder() {
+    localStorage.setItem('player_order', JSON.stringify(players.map(p => p.id)));
+  }
+
+  function applyPlayerOrder() {
+    const saved = localStorage.getItem('player_order');
+    if (!saved) return;
+    try {
+      const order = JSON.parse(saved);
+      players.sort((a, b) => {
+        const ai = order.indexOf(a.id);
+        const bi = order.indexOf(b.id);
+        if (ai === -1) return 1;
+        if (bi === -1) return -1;
+        return ai - bi;
+      });
+    } catch (_) {}
+  }
+
+  function initDragDrop() {
+    if (!document.body.classList.contains('admin-mode')) return;
+
+    let dragSrc = null;
+    let dragAllowed = false;
+
+    document.querySelectorAll('.player-section').forEach(sec => {
+      const handle = sec.querySelector('.drag-handle');
+      if (!handle) return;
+
+      handle.addEventListener('mousedown', () => { dragAllowed = true; });
+      handle.addEventListener('touchstart', () => { dragAllowed = true; }, { passive: true });
+
+      sec.setAttribute('draggable', 'true');
+
+      sec.addEventListener('dragstart', e => {
+        if (!dragAllowed) { e.preventDefault(); return; }
+        dragSrc = sec;
+        dragAllowed = false;
+        setTimeout(() => sec.classList.add('is-dragging'), 0);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', sec.dataset.playerId);
+      });
+
+      sec.addEventListener('dragend', () => {
+        dragAllowed = false;
+        sec.classList.remove('is-dragging');
+        document.querySelectorAll('.player-section').forEach(s => s.classList.remove('drag-over'));
+        dragSrc = null;
+      });
+
+      sec.addEventListener('dragover', e => {
+        if (!dragSrc || dragSrc === sec) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        document.querySelectorAll('.player-section').forEach(s => s.classList.remove('drag-over'));
+        sec.classList.add('drag-over');
+      });
+
+      sec.addEventListener('dragleave', e => {
+        if (!sec.contains(e.relatedTarget)) sec.classList.remove('drag-over');
+      });
+
+      sec.addEventListener('drop', e => {
+        e.preventDefault();
+        sec.classList.remove('drag-over');
+        if (!dragSrc || dragSrc === sec) return;
+
+        const srcId = dragSrc.dataset.playerId;
+        const dstId = sec.dataset.playerId;
+        const srcIdx = players.findIndex(p => p.id === srcId);
+        const dstIdx = players.findIndex(p => p.id === dstId);
+        if (srcIdx === -1 || dstIdx === -1) return;
+
+        const [moved] = players.splice(srcIdx, 1);
+        players.splice(dstIdx, 0, moved);
+
+        savePlayerOrder();
+        render();
+        toast('排序已更新');
+      });
+    });
   }
 
   /* ── Start ───────────────────────────────────── */
